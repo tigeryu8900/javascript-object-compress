@@ -1,5 +1,5 @@
 {
-  "name": "javascript-object-compresser",
+  "name": "javascript-object-compress",
   "version": "1.0.0",
   "description": "A tool for compressing JavaScript objects to Uint8Array",
   "main": "dist/index.js",
@@ -17,6 +17,5 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.5.3"
-  },
-  "private": true
+  }
 }

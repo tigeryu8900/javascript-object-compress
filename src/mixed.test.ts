@@ -1,7 +1,6 @@
 import {expect, test} from "@jest/globals";
 import {testCompressDecompress} from "./common-test";
 import {compress, decompress} from "./index";
-import {Compressible} from "./types";
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
 
@@ -14,6 +13,14 @@ test("Shared Array Buffers", async () => {
   expect(result).toEqual(array);
   expect(result[1].buffer).toBe(result[0].buffer);
   expect(result[2].buffer).toBe(result[0].buffer);
+});
+
+test("package.json", async () => {
+  await testCompressDecompress(JSON.parse(readFileSync(join(
+      __dirname,
+      "..",
+      "package.json"
+  )).toString()));
 });
 
 test("package-lock.json", async () => {

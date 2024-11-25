@@ -7,10 +7,12 @@ import {
   TypeEnum
 } from "./types";
 import {Uint8ArrayBuilder, Uint8ArrayBuilder2} from "./builders";
+import {decodeVarUint, encodeVarUint} from "./varint";
 
 interface Ref {
   buf: Uint8ArrayBuilder;
   ptr: Uint8Array;
+  offset: number;
 }
 
 function encodeUint32(length: number): [number, number, number, number] {
@@ -32,21 +34,30 @@ async function compressTypedArray(
     buf: Uint8ArrayBuilder,
     type: TypedArrayEnum
 ): Promise<void> {
-  await compressObject(obj.buffer as ArrayBuffer, refs);
+  await compressObject(obj.buffer as ArrayBuffer, refs, new Uint8ArrayBuilder(), false);
   buf.append([type]);
   buf.append(refs.get(obj.buffer)?.ptr ?? new Uint8Array(4));
-  buf.append(encodeUint32(obj.byteOffset));
-  buf.append(encodeUint32(obj.length));
+  buf.append(encodeVarUint(obj.byteOffset));
+  buf.append(encodeVarUint(obj.length));
 }
 
 async function compressObject(
     obj: CompressibleObject,
-    refs: Map<object, Ref>
+    refs: Map<object, Ref>,
+    buf: Uint8ArrayBuilder,
+    makeRef: boolean = true
 ): Promise<void> {
-  if (!refs.has(obj)) {
-    const buf = new Uint8ArrayBuilder();
-    const ptr = new Uint8Array(4);
-    refs.set(obj, {buf, ptr});
+  if (refs.has(obj)) {
+    if (makeRef) {
+      buf.append([TypeEnum.REF]);
+      buf.append(refs.get(obj)?.ptr ?? new Uint8Array(4));
+    }
+  } else {
+    refs.set(obj, {
+      buf,
+      ptr: new Uint8Array(4),
+      offset: buf.length
+    });
     if (obj instanceof Date) {
       buf.append([TypeEnum.DATE]);
       buf.append(new Uint8Array(Float64Array.from([obj.getTime()]).buffer));
@@ -74,55 +85,59 @@ async function compressObject(
       await compressTypedArray(obj, refs, buf, TypeEnum.BIGUINT64ARRAY);
     } else if (obj.constructor.name === "ArrayBuffer") {
       const array = new Uint8Array(obj as ArrayBuffer);
-      buf.append([TypeEnum.ARRAYBUFFER, ...encodeUint32(array.length)]);
+      buf.append([TypeEnum.ARRAYBUFFER, ...encodeVarUint(array.length)]);
       buf.append(array);
     } else if (obj instanceof File) {
       const encoder = new TextEncoder();
       const nameArray = encoder.encode(obj.name);
-      buf.append([TypeEnum.FILE, ...encodeUint32(nameArray.length)]);
+      buf.append([TypeEnum.FILE, ...encodeVarUint(nameArray.length)]);
       buf.append(nameArray);
       buf.append(new Uint8Array(Float64Array.from([obj.lastModified]).buffer));
       const typeArray = encoder.encode(obj.type);
-      buf.append(encodeUint32(typeArray.length));
+      buf.append(encodeVarUint(typeArray.length));
       buf.append(typeArray);
       const array = await obj.bytes();
-      buf.append(encodeUint32(array.length));
+      buf.append(encodeVarUint(array.length));
       buf.append(array);
     } else if (obj instanceof Blob) {
       const encoder = new TextEncoder();
       const typeArray = encoder.encode(obj.type);
-      buf.append([TypeEnum.BLOB, ...encodeUint32(typeArray.length)]);
+      buf.append([TypeEnum.BLOB, ...encodeVarUint(typeArray.length)]);
       buf.append(typeArray);
       const array = await obj.bytes();
-      buf.append(encodeUint32(array.length));
+      buf.append(encodeVarUint(array.length));
       buf.append(array);
     } else if (obj instanceof Array) {
-      buf.append([TypeEnum.ARRAY, ...encodeUint32(obj.length)]);
+      buf.append([TypeEnum.ARRAY]);
       for (const obj2 of obj) {
         await compressHelper(obj2, refs, buf);
       }
+      buf.append([TypeEnum.END]);
     } else if (obj instanceof Map) {
       const entries = obj.entries();
-      buf.append([TypeEnum.MAP, ...encodeUint32(obj.size)]);
+      buf.append([TypeEnum.MAP]);
       for (const [key, value] of entries) {
         await compressHelper(key, refs, buf);
         await compressHelper(value, refs, buf);
       }
+      buf.append([TypeEnum.END]);
     } else if (obj instanceof Set) {
-      buf.append([TypeEnum.SET, ...encodeUint32(obj.size)]);
+      buf.append([TypeEnum.SET]);
       for (const obj2 of obj) {
         await compressHelper(obj2, refs, buf);
       }
+      buf.append([TypeEnum.END]);
     } else {
       const entries = Object.entries(obj);
-      buf.append([TypeEnum.OBJECT, ...encodeUint32(entries.length)]);
+      buf.append([TypeEnum.OBJECT]);
       const encoder = new TextEncoder();
       for (const [key, value] of entries) {
-        const array = encoder.encode(key);
-        buf.append(encodeUint32(array.length));
-        buf.append(array);
         await compressHelper(value, refs, buf);
+        const array = encoder.encode(key);
+        buf.append(encodeVarUint(array.length));
+        buf.append(array);
       }
+      buf.append([TypeEnum.END]);
     }
   }
 }
@@ -133,7 +148,7 @@ async function compressHelper(obj: Compressible, refs: Map<object, Ref>, buf: Ui
     case "string": {
       const encoder = new TextEncoder();
       const array = encoder.encode(obj);
-      buf.append([TypeEnum.STRING, ...encodeUint32(array.length)]);
+      buf.append([TypeEnum.STRING, ...encodeVarUint(array.length)]);
       buf.append(array);
     } break;
     case "number": {
@@ -144,11 +159,10 @@ async function compressHelper(obj: Compressible, refs: Map<object, Ref>, buf: Ui
       buf.append([TypeEnum.BIGINT]);
       const array: number[] = [];
       while (obj > 0n) {
-        let foo = (obj & 0xffn).valueOf();
         array.push(Number(obj & 0xffn));
         obj >>= 8n;
       }
-      buf.append(encodeUint32(array.length));
+      buf.append(encodeVarUint(array.length));
       buf.append(array);
     } break;
     case "boolean": {
@@ -161,9 +175,7 @@ async function compressHelper(obj: Compressible, refs: Map<object, Ref>, buf: Ui
       if (obj === null) {
         buf.append([TypeEnum.NULL]);
       } else {
-        await compressObject(obj, refs);
-        buf.append([TypeEnum.REF]);
-        buf.append(refs.get(obj)?.ptr ?? new Uint8Array(4));
+        await compressObject(obj, refs, buf);
       }
     } break;
     default: {
@@ -178,9 +190,13 @@ export async function compress(obj: Compressible): Promise<Uint8Array> {
   await compressHelper(obj, refs, buf);
   const builder = new Uint8ArrayBuilder2();
   builder.append(buf);
-  for (const {buf, ptr} of refs.values()) {
-    ptr.set(encodeUint32(builder.length));
-    builder.append(buf);
+  for (const {buf: buf2, ptr, offset} of refs.values()) {
+    if (Object.is(buf, buf2)) {
+      ptr.set(encodeUint32(offset));
+    } else {
+      ptr.set(encodeUint32(builder.length + offset));
+      builder.append(buf2);
+    }
   }
   return builder.toUint8Array();
 }
@@ -192,17 +208,17 @@ function decompressTypedArray<T extends TypedArray>(
     TypedArray: TypedArrayConstructor<T>
 ): [T, number] {
   const origOffset = offset - 1;
-  const ptr = decodeUint32(buf.subarray(offset, offset + 4));
+  let ptr: number;
+  ptr = decodeUint32(buf.subarray(offset, offset + 4));
   offset += 4;
   const buffer = (refs.has(ptr) ? refs.get(ptr) : decompressHelper(
       buf,
       ptr,
       refs
   )[0]) as ArrayBuffer;
-  const byteOffset = decodeUint32(buf.subarray(offset, offset + 4));
-  offset += 4;
-  const length = decodeUint32(buf.subarray(offset, offset + 4));
-  offset += 4;
+  let byteOffset, length: number;
+  [byteOffset, offset] = decodeVarUint(buf, offset);
+  [length, offset] = decodeVarUint(buf, offset);
   const result = new TypedArray(buffer, byteOffset, length);
   refs.set(origOffset, result);
   return [result, offset];
@@ -213,13 +229,16 @@ function decompressHelper(
     offset: number,
     refs: Map<number, Compressible>
 ): [Compressible, number] {
+  if (refs.has(offset)) {
+    return [refs.get(offset), offset];
+  }
   const origOffset = offset;
   let result: Compressible;
-  switch (buf[offset++] as TypeEnum) {
+  switch (buf[offset++] as Exclude<TypeEnum.END, TypeEnum>) {
     case TypeEnum.STRING: {
       const decoder = new TextDecoder();
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let length: number;
+      [length, offset] = decodeVarUint(buf, offset);
       result = decoder.decode(buf.subarray(offset, offset + length));
       offset += length;
     } break;
@@ -228,8 +247,8 @@ function decompressHelper(
       offset += 8;
     } break;
     case TypeEnum.BIGINT: {
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let length: number;
+      [length, offset] = decodeVarUint(buf, offset);
       result = 0n;
       for (let i = 0; i < length; i++) {
         result += BigInt(buf[offset + i]) << BigInt(8 * i);
@@ -295,26 +314,26 @@ function decompressHelper(
       return decompressTypedArray(buf, offset, refs, BigUint64Array);
     }
     case TypeEnum.ARRAYBUFFER: {
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let length: number;
+      [length, offset] = decodeVarUint(buf, offset);
       result = buf.slice(offset, offset + length).buffer;
       offset += length;
       refs.set(origOffset, result);
     } break;
     case TypeEnum.FILE: {
       const decoder = new TextDecoder();
-      const nameLength = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let nameLength: number;
+      [nameLength, offset] = decodeVarUint(buf, offset);
       const name = decoder.decode(buf.subarray(offset, offset + nameLength));
       offset += nameLength;
       const lastModified = new Float64Array(buf.slice(offset, offset + 8).buffer)[0];
       offset += 8;
-      const typeLength = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let typeLength: number;
+      [typeLength, offset] = decodeVarUint(buf, offset);
       const type = decoder.decode(buf.subarray(offset, offset + typeLength));
       offset += typeLength;
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let length: number;
+      [length, offset] = decodeVarUint(buf, offset);
       result = new File([buf.subarray(offset, offset + length)], name, {
         lastModified,
         type
@@ -324,12 +343,12 @@ function decompressHelper(
     } break;
     case TypeEnum.BLOB: {
       const decoder = new TextDecoder();
-      const typeLength = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let typeLength: number;
+      [typeLength, offset] = decodeVarUint(buf, offset);
       const type = decoder.decode(buf.subarray(offset, offset + typeLength));
       offset += typeLength;
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
+      let length: number;
+      [length, offset] = decodeVarUint(buf, offset);
       result = new Blob([buf.subarray(offset, offset + length)], {type});
       offset += length;
       refs.set(origOffset, result);
@@ -337,53 +356,49 @@ function decompressHelper(
     case TypeEnum.ARRAY: {
       result = [];
       refs.set(origOffset, result);
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
       let val: Compressible;
-      for (let i = 0; i < length; i++) {
+      while (buf[offset] !== TypeEnum.END) {
         [val, offset] = decompressHelper(buf, offset, refs);
         result.push(val);
       }
+      offset++;
     } break;
     case TypeEnum.OBJECT: {
       result = {};
       refs.set(origOffset, result);
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
       const decoder = new TextDecoder();
       let val: Compressible;
-      for (let i = 0; i < length; i++) {
-        const nameLength = decodeUint32(buf.subarray(offset, offset + 4));
-        offset += 4;
+      while (buf[offset] !== TypeEnum.END) {
+        [val, offset] = decompressHelper(buf, offset, refs);
+        let nameLength: number;
+        [nameLength, offset] = decodeVarUint(buf, offset);
         const name = decoder.decode(buf.subarray(offset, offset + nameLength));
         offset += nameLength;
-        [val, offset] = decompressHelper(buf, offset, refs);
         result[name] = val;
       }
+      offset++;
     } break;
     case TypeEnum.MAP: {
       result = new Map<Compressible, Compressible>();
       refs.set(origOffset, result);
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
       let key: Compressible;
       let val: Compressible;
-      for (let i = 0; i < length; i++) {
+      while (buf[offset] !== TypeEnum.END) {
         [key, offset] = decompressHelper(buf, offset, refs);
         [val, offset] = decompressHelper(buf, offset, refs);
         result.set(key, val);
       }
+      offset++;
     } break;
     case TypeEnum.SET: {
       result = new Set<Compressible>();
       refs.set(origOffset, result);
-      const length = decodeUint32(buf.subarray(offset, offset + 4));
-      offset += 4;
       let val: Compressible;
-      for (let i = 0; i < length; i++) {
+      while (buf[offset] !== TypeEnum.END) {
         [val, offset] = decompressHelper(buf, offset, refs);
         result.add(val);
       }
+      offset++;
     } break;
     case TypeEnum.INCOMPRESSIBLE: {
       result = null;

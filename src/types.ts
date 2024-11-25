@@ -80,6 +80,7 @@ export enum TypeEnum {
   OBJECT,
   MAP,
   SET,
+  END,
   INCOMPRESSIBLE
 }
 
