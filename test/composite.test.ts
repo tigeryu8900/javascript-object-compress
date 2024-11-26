@@ -1,7 +1,7 @@
 import {expect, test} from "@jest/globals";
-import {compress, decompress} from "./index";
-import type {Compressible} from "./types";
-import {testCompressDecompress} from "./common-test";
+import {compress, decompress} from "../src";
+import type {Compressible} from "../src/types";
+import {testCompressDecompress} from "./common";
 
 test("Array", async () => {
   await testCompressDecompress([]);

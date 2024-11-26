@@ -54,8 +54,16 @@ export interface TypedArrayConstructor<T extends TypedArray> {
 
 export enum TypeEnum {
   STRING,
-  NUMBER,
-  BIGINT,
+  NAN,
+  ZERO,
+  POSVARINT,
+  NEGVARINT,
+  POSINF,
+  NEGINF,
+  FLOATING,
+  ZEROBIGINT,
+  POSBIGINT,
+  NEGBIGINT,
   TRUE,
   FALSE,
   UNDEFINED,
@@ -80,7 +88,6 @@ export enum TypeEnum {
   OBJECT,
   MAP,
   SET,
-  END,
   INCOMPRESSIBLE
 }
 

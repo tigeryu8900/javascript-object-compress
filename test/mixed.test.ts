@@ -1,6 +1,6 @@
 import {expect, test} from "@jest/globals";
-import {testCompressDecompress} from "./common-test";
-import {compress, decompress} from "./index";
+import {testCompressDecompress} from "./common";
+import {compress, decompress} from "../src";
 import {readFileSync} from "node:fs";
 import {join} from "node:path";
 

@@ -1,5 +1,5 @@
 import {expect, test} from "@jest/globals";
-import {decodeVarUint, encodeVarUint} from "./varint";
+import {decodeVarUint, encodeVarUint} from "../src/varint";
 
 test("varint", () => {
   expect(decodeVarUint(encodeVarUint(0), 0)).toEqual([0, 1]);

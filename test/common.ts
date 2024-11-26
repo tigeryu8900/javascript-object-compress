@@ -1,6 +1,6 @@
-import type {Compressible} from "./types";
+import type {Compressible} from "../src/types";
 import {expect} from "@jest/globals";
-import {compress, decompress} from "./index";
+import {compress, decompress} from "../src";
 
 export async function testCompressDecompress(obj: Compressible): Promise<Compressible> {
   expect(decompress(await compress(obj))).toEqual(obj);

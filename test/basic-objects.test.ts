@@ -1,5 +1,5 @@
 import {test} from "@jest/globals";
-import {testCompressDecompress} from "./common-test";
+import {testCompressDecompress} from "./common";
 
 test("Date", async () => {
   await testCompressDecompress(new Date(0));
