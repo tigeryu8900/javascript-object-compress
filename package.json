@@ -1,6 +1,6 @@
 {
   "name": "javascript-object-compress",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A tool for compressing JavaScript objects to Uint8Array",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
