@@ -4,6 +4,10 @@
   "description": "A tool for compressing JavaScript objects to Uint8Array",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tigeryu8900/javascript-object-compress.git"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.js",
