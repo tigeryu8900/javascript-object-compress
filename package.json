@@ -8,6 +8,7 @@
     "type": "git",
     "url": "https://github.com/tigeryu8900/javascript-object-compress.git"
   },
+  "license": "MIT",
   "exports": {
     ".": {
       "types": "./dist/index.d.js",
