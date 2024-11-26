@@ -1,6 +1,7 @@
 /tmp
 /out-tsc
-/dist
+/src
+/test
 
 /node_modules
 npm-debug.log*
@@ -129,7 +130,6 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -142,7 +142,6 @@ web_modules/
 .npm
 
 # Optional eslint cache
-.eslintcache
 
 # Optional stylelint cache
 .stylelintcache
@@ -179,7 +178,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
